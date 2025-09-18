@@ -1,0 +1,98 @@
+version: '3.8'
+
+services:
+  nodenomad-1:
+    build: .
+    container_name: nodenomad-1
+    ports:
+      - "3001:3000"
+    environment:
+      - NODE_ID=node-1
+      - NODE_PORT=3000
+      - CLUSTER_NODES=node-1:3001,node-2:3002,node-3:3003
+      - LOG_LEVEL=info
+    volumes:
+      - ./data/node-1:/app/data
+    networks:
+      - nodenomad-cluster
+    restart: unless-stopped
+
+  nodenomad-2:
+    build: .
+    container_name: nodenomad-2
+    ports:
+      - "3002:3000"
+    environment:
+      - NODE_ID=node-2
+      - NODE_PORT=3000
+      - CLUSTER_NODES=node-1:3001,node-2:3002,node-3:3003
+      - LOG_LEVEL=info
+    volumes:
+      - ./data/node-2:/app/data
+    networks:
+      - nodenomad-cluster
+    restart: unless-stopped
+    depends_on:
+      - nodenomad-1
+
+  nodenomad-3:
+    build: .
+    container_name: nodenomad-3
+    ports:
+      - "3003:3000"
+    environment:
+      - NODE_ID=node-3
+      - NODE_PORT=3000
+      - CLUSTER_NODES=node-1:3001,node-2:3002,node-3:3003
+      - LOG_LEVEL=info
+    volumes:
+      - ./data/node-3:/app/data
+    networks:
+      - nodenomad-cluster
+    restart: unless-stopped
+    depends_on:
+      - nodenomad-1
+
+  # Monitoring stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: nodenomad-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--web.enable-lifecycle'
+    networks:
+      - nodenomad-cluster
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: nodenomad-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    networks:
+      - nodenomad-cluster
+    restart: unless-stopped
+    depends_on:
+      - prometheus
+
+volumes:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  nodenomad-cluster:
+    driver: bridge
