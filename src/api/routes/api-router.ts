@@ -4,20 +4,22 @@
  */
 
 import { Router } from 'express';
-import { ClusterManager } from '../../cluster/index.js';
+import { RaftClusterManager } from '../../cluster/raft-cluster-manager.js';
 import { KeyValueRoutes } from './key-value-routes.js';
 import { ClusterRoutes } from './cluster-routes.js';
 import { MigrationRoutes } from './migration-routes.js';
+import { ShardRoutes } from './shard-routes.js';
 import { logger } from '../../utils/logger.js';
 
 export class ApiRouter {
   private router: Router;
-  private clusterManager: ClusterManager;
+  private clusterManager: RaftClusterManager;
   private keyValueRoutes: KeyValueRoutes;
   private clusterRoutes: ClusterRoutes;
   private migrationRoutes: MigrationRoutes;
+  private shardRoutes: ShardRoutes;
 
-  constructor(clusterManager: ClusterManager) {
+  constructor(clusterManager: RaftClusterManager) {
     this.router = Router();
     this.clusterManager = clusterManager;
     
@@ -25,6 +27,7 @@ export class ApiRouter {
     this.keyValueRoutes = new KeyValueRoutes(clusterManager);
     this.clusterRoutes = new ClusterRoutes(clusterManager);
     this.migrationRoutes = new MigrationRoutes(clusterManager);
+    this.shardRoutes = new ShardRoutes(clusterManager);
     
     this.setupRoutes();
   }
@@ -40,6 +43,7 @@ export class ApiRouter {
           keyValue: '/kv',
           cluster: '/cluster',
           migration: '/migration',
+          shards: '/shards',
         },
       });
     });
@@ -52,6 +56,9 @@ export class ApiRouter {
     
     // Migration operations (the "nomad" feature)
     this.router.use('/migration', this.migrationRoutes.getRouter());
+    
+    // Shard management operations
+    this.router.use('/shard', this.shardRoutes.getRouter());
 
     // Error handling for API routes
     this.router.use((error: Error, req: any, res: any, next: any) => {

@@ -158,6 +158,11 @@ export class RaftEngine {
       logIndex: entry.index 
     });
 
+    // In a single-node cluster, immediately commit the entry
+    // since there are no other nodes to replicate to
+    this.commitIndex = entry.index;
+    this.applyCommittedEntries();
+
     return entry;
   }
 
@@ -443,12 +448,24 @@ export class RaftEngine {
    * Apply committed entries
    */
   private applyCommittedEntries(): void {
+    logger.info('Applying committed entries', { 
+      nodeId: this.nodeId, 
+      lastApplied: this.lastApplied, 
+      commitIndex: this.commitIndex 
+    });
+    
     while (this.lastApplied < this.commitIndex) {
       this.lastApplied++;
       const entry = this.log[this.lastApplied];
       if (entry) {
+        logger.info('Applying log entry', { 
+          nodeId: this.nodeId, 
+          index: this.lastApplied,
+          command: entry.command.type,
+          key: entry.command.key
+        });
         this.onLogCommit?.(entry);
-        logger.debug('Applied log entry', { 
+        logger.info('Applied log entry', { 
           nodeId: this.nodeId, 
           index: this.lastApplied,
           command: entry.command.type 

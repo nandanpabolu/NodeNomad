@@ -121,3 +121,14 @@ playwright/.cache/
 
 # Local development
 .local/
+
+# Data files
+data/
+*.wal
+
+# Backup files
+*.backup
+*.bak
+
+# Lock files (keep package-lock.json)
+yarn.lock

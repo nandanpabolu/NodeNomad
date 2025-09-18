@@ -9,6 +9,7 @@ import express from 'express';
 import cors from 'cors';
 import { config } from 'dotenv';
 import { RaftClusterManager } from './cluster/raft-cluster-manager.js';
+import { ApiRouter } from './api/routes/api-router.js';
 import type { NodeConfig, LogLevel } from './types/index.js';
 import { LogLevel } from './types/index.js';
 
@@ -18,6 +19,7 @@ config();
 class RaftNodeNomadServer {
   private app: express.Application;
   private clusterManager: RaftClusterManager;
+  private apiRouter: ApiRouter;
   private config: NodeConfig;
   private server: any;
 
@@ -25,6 +27,7 @@ class RaftNodeNomadServer {
     this.app = express();
     this.config = this.loadConfig();
     this.clusterManager = new RaftClusterManager(this.config);
+    this.apiRouter = new ApiRouter(this.clusterManager);
     this.setupMiddleware();
     this.setupRoutes();
   }
@@ -217,6 +220,9 @@ class RaftNodeNomadServer {
       }
     });
 
+    // Use the ApiRouter for additional API endpoints
+    this.app.use('/api/v1', this.apiRouter.getRouter());
+
     // Root endpoint
     this.app.get('/', (req, res) => {
       const raftStatus = this.clusterManager.getRaftStatus();
@@ -234,6 +240,8 @@ class RaftNodeNomadServer {
           get: 'GET /api/v1/get/:key',
           delete: 'DELETE /api/v1/delete/:key',
           keys: 'GET /api/v1/keys',
+          shards: '/api/v1/shard/*',
+          cluster: '/api/v1/cluster/*',
         },
       });
     });

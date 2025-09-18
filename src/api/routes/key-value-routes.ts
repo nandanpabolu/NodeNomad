@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import Joi from 'joi';
-import { ClusterManager } from '../../cluster/index.js';
+import { RaftClusterManager } from '../../cluster/raft-cluster-manager.js';
 import type { SetRequest, GetRequest, DeleteRequest, ApiResponse } from '../../types/index.js';
 import { logger } from '../../utils/logger.js';
 
@@ -28,7 +28,7 @@ export class KeyValueRoutes {
     key: Joi.string().min(1).max(255).required(),
   });
 
-  constructor(clusterManager: ClusterManager) {
+  constructor(clusterManager: RaftClusterManager) {
     this.router = Router();
     this.clusterManager = clusterManager;
     this.setupRoutes();

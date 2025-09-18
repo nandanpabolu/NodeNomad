@@ -6,12 +6,14 @@
 import type { NodeConfig, Node, ClusterInfo, ClusterMetrics, Key, Value, NodeStatus } from '../types/index.js';
 import { RaftEngine } from '../core/consensus/index.js';
 import { NodeNomadStorageEngine } from '../core/storage/index.js';
+import { ShardManager } from '../core/sharding/index.js';
 import { logger } from '../utils/logger.js';
 
 export class RaftClusterManager {
   private config: NodeConfig;
   private storage: NodeNomadStorageEngine;
   private raft: RaftEngine;
+  private shardManager: ShardManager;
   private nodes: Map<string, Node> = new Map();
   private isInitialized: boolean = false;
 
@@ -19,6 +21,12 @@ export class RaftClusterManager {
     this.config = config;
     this.storage = new NodeNomadStorageEngine(config.dataDir, config.id);
     this.raft = new RaftEngine(config.id, config.electionTimeout, config.heartbeatInterval);
+    this.shardManager = new ShardManager(
+      config.virtualNodesPerShard || 150,
+      0.2, // rebalance threshold
+      10000, // max shard size
+      100 // min shard size
+    );
     
     // Set up Raft callbacks
     this.raft.onStateChangeCallback((status: NodeStatus) => {
@@ -60,7 +68,7 @@ export class RaftClusterManager {
       id: this.config.id,
       address: this.config.host,
       port: this.config.port,
-      status: 'follower',
+      status: 'follower' as const,
       lastSeen: Date.now(),
       metadata: {
         version: '1.0.0',
@@ -70,6 +78,9 @@ export class RaftClusterManager {
       },
     });
 
+    // Add self to shard manager
+    this.shardManager.addNode(this.config.id, this.config.host, this.config.port, 1);
+
     // Add other cluster nodes
     for (const nodeAddress of this.config.clusterNodes) {
       const [nodeId, port] = nodeAddress.split(':');
@@ -78,7 +89,7 @@ export class RaftClusterManager {
           id: nodeId,
           address: 'localhost', // In real implementation, this would be parsed from address
           port: parseInt(port),
-          status: 'offline',
+          status: 'offline' as const,
           lastSeen: 0,
           metadata: {
             version: '1.0.0',
@@ -87,6 +98,9 @@ export class RaftClusterManager {
             shards: [],
           },
         });
+
+        // Add to shard manager
+        this.shardManager.addNode(nodeId, 'localhost', parseInt(port), 1);
       }
     }
   }
@@ -114,18 +128,40 @@ export class RaftClusterManager {
   }
 
   private handleLogCommit(entry: any): void {
+    logger.info('Handling log commit', { 
+      nodeId: this.config.id, 
+      command: entry.command.type,
+      key: entry.command.key 
+    });
+    
     // Apply the committed log entry to storage
-    this.applyLogEntry(entry);
+    this.applyLogEntry(entry).catch(error => {
+      logger.error('Failed to apply log entry:', error);
+    });
   }
 
   private async applyLogEntry(entry: any): Promise<void> {
     try {
+      logger.info('Applying log entry to storage', { 
+        nodeId: this.config.id, 
+        command: entry.command.type,
+        key: entry.command.key 
+      });
+      
       switch (entry.command.type) {
         case 'set':
           await this.storage.set(entry.command.key, entry.command.value, entry.command.ttl);
+          logger.info('Successfully applied SET command', { 
+            nodeId: this.config.id, 
+            key: entry.command.key 
+          });
           break;
         case 'delete':
           await this.storage.delete(entry.command.key);
+          logger.info('Successfully applied DELETE command', { 
+            nodeId: this.config.id, 
+            key: entry.command.key 
+          });
           break;
         default:
           logger.warn('Unknown command type in log entry:', entry.command.type);
@@ -225,8 +261,60 @@ export class RaftClusterManager {
   }
 
   getShards(): any[] {
-    // Placeholder - will be implemented with sharding
-    return [];
+    return this.shardManager.getAllShards();
+  }
+
+  // Shard Management Methods
+  getNodeForKey(key: Key): string | null {
+    return this.shardManager.getNodeForKey(key);
+  }
+
+  getReplicaNodes(key: Key, replicaCount: number = 3): string[] {
+    return this.shardManager.getReplicaNodes(key, replicaCount);
+  }
+
+  getShardForKey(key: Key): any {
+    return this.shardManager.getShardForKey(key);
+  }
+
+  getNodeShards(nodeId: string): any[] {
+    return this.shardManager.getNodeShards(nodeId);
+  }
+
+  isKeyInShard(key: Key, shardId: string): boolean {
+    return this.shardManager.isKeyInShard(key, shardId);
+  }
+
+  getAffectedNodes(key: Key): string[] {
+    return this.shardManager.getAffectedNodes(key);
+  }
+
+  async scheduleShardMigration(shardId: string, sourceNodeId: string, targetNodeId?: string): Promise<string> {
+    return await this.shardManager.scheduleShardMigration(shardId, sourceNodeId, targetNodeId);
+  }
+
+  async executeShardOperation(operationId: string): Promise<boolean> {
+    return await this.shardManager.executeShardOperation(operationId);
+  }
+
+  getShardOperation(operationId: string): any {
+    return this.shardManager.getShardOperation(operationId);
+  }
+
+  getAllShardOperations(): any[] {
+    return this.shardManager.getAllShardOperations();
+  }
+
+  needsRebalancing(): boolean {
+    return this.shardManager.needsRebalancing();
+  }
+
+  async rebalance(): Promise<string[]> {
+    return await this.shardManager.rebalance();
+  }
+
+  getShardStats(): any {
+    return this.shardManager.getStats();
   }
 
   getClusterInfo(): ClusterInfo {
